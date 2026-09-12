@@ -1,0 +1,14 @@
+name: follow-up
+repo: https://github.com/anhtahaylove/hermes-plugin-follow-up
+sha: b4755219ced31d31401446b69efe1825b49f6f89
+description: Click-to-run follow-up prompts for Hermes Desktop — renders a model's ::followup{...} paragraph
+  as a compact command list whose rows insert or send the prompt.
+maintainer: anhtahaylove
+tier: community
+docs_url: https://github.com/anhtahaylove/hermes-plugin-follow-up
+platforms: []
+capabilities:
+  provides_tools: []
+  provides_hooks: []
+  provides_middleware: []
+  requires_env: []
