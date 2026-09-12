@@ -74,7 +74,12 @@ describe('scanGitRepos', () => {
   })
 })
 
-describe('macOS TCC-protected media exclusions (issue #57611 salvage)', () => {
+// POSIX-only: these cases pin darwin/linux behaviour by passing `platform`,
+// but they scan a REAL temp directory. On Windows that directory is a
+// `C:\...` path, which the module's injected `path.posix` API cannot treat as
+// absolute — so the walk yields nothing regardless of the code under test.
+// Windows path handling is covered by 'repository scan path normalization'.
+describe.skipIf(process.platform === 'win32')('macOS TCC-protected media exclusions (issue #57611 salvage)', () => {
   it('finds a normal repo but skips root-level media folders on darwin', async () => {
     const root = tempDir()
     const dev = makeRepoAt(root, 'dev', 'proj')
