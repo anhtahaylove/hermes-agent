@@ -34,6 +34,25 @@ _MAX_QUERIES_PER_CALL = 7
 _MAX_DESCRIBE_NAMES_PER_CALL = 10
 
 
+def _normalize_aliases(raw: Any) -> Dict[str, Tuple[str, ...]]:
+    """Validate config aliases without letting malformed user config break assembly."""
+    if not isinstance(raw, dict):
+        return {}
+    normalized: Dict[str, Tuple[str, ...]] = {}
+    for raw_name, raw_phrases in raw.items():
+        name = str(raw_name or "").strip().lower()
+        if not name:
+            continue
+        phrases = [raw_phrases] if isinstance(raw_phrases, str) else raw_phrases
+        if not isinstance(phrases, (list, tuple)):
+            continue
+        clean = tuple(dict.fromkeys(
+            phrase.strip() for phrase in phrases if isinstance(phrase, str) and phrase.strip()))
+        if clean:
+            normalized[name] = clean
+    return normalized
+
+
 @dataclass(frozen=True)
 class ToolSearchConfig:
     """Resolved, validated tool-search configuration for a single assembly."""
@@ -45,6 +64,9 @@ class ToolSearchConfig:
     max_search_limit: int
     listing: str = "auto"  # "auto"/"on" = embed the manifest when it fits; "off" = bare bridge
     listing_max_tokens: int = 4000  # budget = min(this, threshold_pct% of context)
+    # User-defined natural-language search phrases, keyed by canonical tool name.
+    # They are indexed alongside tool names/descriptions but never alter schemas or dispatch.
+    aliases: Dict[str, Tuple[str, ...]] = None
     # None = curated default; an explicit list replaces it wholesale ([] = defer no core tools).
     defer_tools: Optional[frozenset] = None
 
@@ -68,6 +90,7 @@ class ToolSearchConfig:
             max_search_limit=max_search_limit,
             listing=_tri_state(raw.get("listing", "auto")),
             listing_max_tokens=_clamped_int(raw.get("listing_max_tokens"), 4000, 200, 60000),
+            aliases=_normalize_aliases(raw.get("aliases")),
             defer_tools=(frozenset(str(n).strip() for n in defer_raw if str(n).strip())
                          if isinstance(defer_raw, (list, tuple, set)) else None))
 
@@ -171,9 +194,12 @@ def classify_tools(tool_defs: List[Dict[str, Any]], defer_tools: Optional[frozen
     return visible, deferrable
 
 
-def _deferrable_in(tool_defs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Deferrable subset of pre-assembly ``tool_defs`` under the read-only user config."""
-    return classify_tools(tool_defs, load_config_readonly().effective_defer_tools)[1]
+def _deferrable_in(tool_defs: List[Dict[str, Any]],
+                   defer_tools: Optional[frozenset] = None) -> List[Dict[str, Any]]:
+    """Deferrable subset of pre-assembly ``tool_defs`` under the supplied or read-only config."""
+    if defer_tools is None:
+        defer_tools = load_config_readonly().effective_defer_tools
+    return classify_tools(tool_defs, defer_tools)[1]
 
 
 def estimate_tokens_from_schemas(tool_defs: Iterable[Dict[str, Any]]) -> int:
@@ -447,7 +473,8 @@ def dispatch_tool_search(args: Dict[str, Any], *, current_tool_defs: List[Dict[s
     raw_limit = args.get("limit")
     limit = (config.search_default_limit if raw_limit is None
              else _clamped_int(raw_limit, config.search_default_limit, 1, config.max_search_limit))
-    catalog = build_catalog(_deferrable_in(current_tool_defs))
+    catalog = build_catalog(
+        _deferrable_in(current_tool_defs, config.effective_defer_tools), aliases=config.aliases)
     remote_entries: List[List[CatalogEntry]] = [[] for _ in queries]
     if connections_in_scope(current_tool_defs):
         remote_entries = connector_entries_by_group(queries, connector_search=connector_search)

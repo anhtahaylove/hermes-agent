@@ -52,6 +52,61 @@ class TestConfigParsing:
         assert cfg.enabled == "auto"
 
 
+    def test_aliases_are_parsed_and_normalized(self):
+        from tools.tool_search import ToolSearchConfig
+
+        cfg = ToolSearchConfig.from_raw({
+            "aliases": {
+                "web_search": "tìm kiếm trên web",
+                "VISION_ANALYZE": ["phân tích ảnh", "xem hình ảnh"],
+                "": "ignored",
+                "terminal": ["chạy lệnh shell", 123, ""],
+            }
+        })
+
+        assert cfg.aliases == {
+            "web_search": ("tìm kiếm trên web",),
+            "vision_analyze": ("phân tích ảnh", "xem hình ảnh"),
+            "terminal": ("chạy lệnh shell",),
+        }
+
+    def test_vietnamese_aliases_route_common_tools(self):
+        from tools.tool_search import ToolSearchConfig, dispatch_tool_search
+
+        defs = [
+            _td("web_search", "Search public internet sources"),
+            _td("web_extract", "Extract a web page"),
+            _td("vision_analyze", "Analyze an image"),
+            _td("terminal", "Execute a shell command"),
+            _td("read_file", "Read a text file"),
+            _td("write_file", "Write a text file"),
+            _td("search_files", "Search local files"),
+        ]
+        cfg = ToolSearchConfig.from_raw({
+            "defer": [td["function"]["name"] for td in defs],
+            "aliases": {
+            "web_search": "tìm kiếm trên web",
+            "web_extract": "đọc nội dung trang web",
+            "vision_analyze": "phân tích ảnh",
+            "terminal": "chạy lệnh shell",
+            "read_file": "đọc file văn bản",
+            "write_file": "ghi file văn bản",
+            "search_files": "tìm kiếm file",
+        }})
+
+        for query, expected in [
+            ("tìm kiếm trên web", "web_search"),
+            ("đọc nội dung trang web", "web_extract"),
+            ("phân tích ảnh", "vision_analyze"),
+            ("chạy lệnh shell", "terminal"),
+            ("đọc file văn bản", "read_file"),
+            ("ghi file văn bản", "write_file"),
+            ("tìm kiếm file", "search_files"),
+        ]:
+            out = json.loads(dispatch_tool_search(
+                {"queries": [query], "limit": 3}, current_tool_defs=defs, config=cfg))
+            assert out["results"][0]["matches"][0] == expected
+
     def test_search_limits_clamped(self):
         from tools.tool_search import ToolSearchConfig
         cfg = ToolSearchConfig.from_raw({

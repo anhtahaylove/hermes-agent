@@ -76,8 +76,8 @@ def _registry_toolset(name: str) -> Optional[str]:
     return toolset if isinstance(toolset, str) else None
 
 
-def _entry_search_text(td: Dict[str, Any], source_label: str = "") -> str:
-    """Search-text blob: split name words + source label + description + top-level parameter
+def _entry_search_text(td: Dict[str, Any], source_label: str = "", aliases: str = "") -> str:
+    """Search-text blob: split name words + source label + description + configured aliases + top-level parameter
     names (schema bodies are noise with no recall gain). The ``mcp__`` prefix is dropped — it
     is in every MCP document, so its IDF is ~0. The source label lets a service-name query
     ("linear") reach a tool whose own name omits the vendor."""
@@ -88,7 +88,7 @@ def _entry_search_text(td: Dict[str, Any], source_label: str = "") -> str:
     name_words = re.sub(r"[_.:-]", " ", name)
     extra = source_label if source_label and source_label not in name_words.split() else ""
     param_names = " ".join(((fn.get("parameters") or {}).get("properties") or {}).keys())
-    return f"{name_words} {extra} {fn.get('description', '') or ''} {param_names}"
+    return f"{name_words} {extra} {fn.get('description', '') or ''} {aliases} {param_names}"
 
 
 def _classify_source(name: str) -> Tuple[str, str]:
@@ -99,8 +99,10 @@ def _classify_source(name: str) -> Tuple[str, str]:
     return ("mcp" if toolset.startswith("mcp-") else "plugin", toolset)
 
 
-def build_catalog(tool_defs: List[Dict[str, Any]]) -> List[CatalogEntry]:
+def build_catalog(tool_defs: List[Dict[str, Any]], *,
+                  aliases: Optional[Dict[str, Tuple[str, ...]]] = None) -> List[CatalogEntry]:
     """Build the deferred-tool catalog from the deferrable subset of tool-defs."""
+    aliases = aliases or {}
     catalog: List[CatalogEntry] = []
     for td in tool_defs:
         fn = _fn(td)
@@ -110,9 +112,11 @@ def build_catalog(tool_defs: List[Dict[str, Any]]) -> List[CatalogEntry]:
         source, source_name = _classify_source(name)
         # Index the human-facing label ("linear", not "mcp-linear").
         source_label = _listing_group_label(source_name) if source_name else ""
+        alias_text = " ".join(aliases.get(name.lower(), ()))
         catalog.append(CatalogEntry(
             name=name, description=fn.get("description", "") or "", schema=td, source=source,
-            source_name=source_name, _tokens=_tokenize(_entry_search_text(td, source_label))))
+            source_name=source_name,
+            _tokens=_tokenize(_entry_search_text(td, source_label, alias_text))))
     return catalog
 
 
